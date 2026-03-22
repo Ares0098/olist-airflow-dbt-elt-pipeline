@@ -1,6 +1,10 @@
 import os
+import requests
+import zipfile
+
+from dotenv import load_dotenv  
+from io import BytesIO
 from minio import Minio
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -12,7 +16,7 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 BUCKET_NAME = os.getenv("MINIO_BUCKET")
 PREFIX = os.getenv("MINIO_PREFIX")
-DATA_PATH = "data/raw"
+DATA_URL = os.getenv("DATA_URL")
 
 assert MINIO_ENDPOINT, "Missing MINIO_ENDPOINT"
 assert MINIO_ACCESS_KEY, "Missing MINIO_ACCESS_KEY"
@@ -24,7 +28,6 @@ print("Config loaded:")
 print(f"Endpoint: {MINIO_ENDPOINT}")
 print(f"Bucket: {BUCKET_NAME}")
 print(f"Prefix: {PREFIX}")
-print(f"Data path exists: {os.path.exists(DATA_PATH)}")
 
 # ----------------------
 # Initialize client
@@ -57,37 +60,59 @@ def create_bucket():
             print(f"Bucket already exists: {BUCKET_NAME}")
     except Exception as e:
         raise Exception(f"Bucket creation failed: {e}")
+    
+# ----------------------
+# Download files
+# ----------------------
+def download_dataset() : 
+
+    url = DATA_URL
+
+    print(f"Downloading dataset to in memory...")
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"Download failed: {e}")
+        raise
+    
+    response_zip = response.content
+
+    return response_zip
+
 
 # ----------------------
 # Upload files
 # ----------------------
-def upload_files():
-    try:
-        files = os.listdir(DATA_PATH)
-        print("Files found:", files)
+def extract_and_upload_files(response_zip):
+
+    try : 
+        print("Extracting dataset...")
+
+        with zipfile.ZipFile(BytesIO(response_zip)) as z:
+            for file_name in z.namelist():
+                # Only CSV files
+                if file_name.endswith(".csv"):
+                    data = z.read(file_name)
+                    print(f"Uploading dataset : {os.path.basename(file_name)}")
+                    object_name = f"{PREFIX}/{os.path.basename(file_name)}"
+                    client.put_object(
+                        BUCKET_NAME,
+                        object_name,
+                        BytesIO(data),
+                        length=len(data)
+                    )
+                    print(f"Uploaded {object_name} → bucket {BUCKET_NAME}")
     except Exception as e:
-        raise Exception(f"Failed to read data directory: {e}")
-
-    for file_name in files:
-        file_path = os.path.join(DATA_PATH, file_name)
-
-        if os.path.isfile(file_path):
-            object_name = f"{PREFIX}/{file_name}"
-
-            try:
-                client.fput_object(
-                    BUCKET_NAME,
-                    object_name,
-                    file_path
-                )
-                print(f"Uploaded: {object_name}")
-            except Exception as e:
-                print(f"Failed to upload {file_name}: {e}")
+        print(f"Extraction failed: {e}")
+        raise
 
 # ----------------------
 # Main
 # ----------------------
 if __name__ == "__main__":
     create_bucket()
-    upload_files()
-    print("Upload process completed")
+    downloaded_dataset = download_dataset()
+    extract_and_upload_files(response_zip = downloaded_dataset)
+    print("Download and Upload process completed")
