@@ -1,57 +1,94 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from datetime import datetime
+from airflow.utils.dates import days_ago
+import subprocess
+import os
 
-# import your scripts
-from scripts.download_dataset import download_olist_data
-from scripts.upload_to_minio import upload_to_minio
-from scripts.load_to_postgres import load_to_postgres
-
-
+# ----------------------
+# Default args
+# ----------------------
 default_args = {
-    "owner": "ares",
+    "owner": "airflow",
+    "depends_on_past": False,
     "retries": 1,
 }
 
-
-with DAG(
-    dag_id="olist_elt_pipeline",
+# ----------------------
+# DAG definition
+# ----------------------
+dag = DAG(
+    "olist_elt_pipeline",
     default_args=default_args,
-    start_date=datetime(2024, 1, 1),
-    schedule_interval=None,  # manual trigger
+    description="Olist ELT pipeline with MinIO, Postgres, and dbt",
+    schedule_interval=None,
+    start_date=days_ago(1),
     catchup=False,
-) as dag:
+)
 
-    # 1. Download dataset
-    download_task = PythonOperator(
-        task_id="download_dataset",
-        python_callable=download_olist_data,
+# ----------------------
+# Paths inside Airflow container
+# ----------------------
+SCRIPTS_PATH = "/opt/airflow/scripts"
+DBT_ROOT_PATH = "/opt/airflow/dbt"            # contains profiles.yml
+DBT_PROJECT_PATH = os.path.join(DBT_ROOT_PATH, "olist_project")  # dbt_project.yml inside this folder
+
+# ----------------------
+# Tasks
+# ----------------------
+def download_and_upload():
+    script = os.path.join(SCRIPTS_PATH, "download_and_upload_to_minio.py")
+    subprocess.run(["python", script], check=True)
+
+
+def load_raw_postgres():
+    script = os.path.join(SCRIPTS_PATH, "load_to_postgres.py")
+    subprocess.run(["python", script], check=True)
+
+
+def dbt_run():
+    subprocess.run(
+        ["dbt", "run", "--profiles-dir", DBT_ROOT_PATH],
+        check=True,
+        cwd=DBT_PROJECT_PATH,
     )
 
-    # 2. Upload to MinIO
-    upload_task = PythonOperator(
-        task_id="upload_to_minio",
-        python_callable=upload_to_minio,
+
+def dbt_test():
+    subprocess.run(
+        ["dbt", "test", "--profiles-dir", DBT_ROOT_PATH],
+        check=True,
+        cwd=DBT_PROJECT_PATH,
     )
 
-    # 3. Load to Postgres (raw layer)
-    load_task = PythonOperator(
-        task_id="load_to_postgres",
-        python_callable=load_to_postgres,
-    )
 
-    # 4. Run dbt models
-    dbt_run = BashOperator(
-        task_id="dbt_run",
-        bash_command="cd /opt/airflow/dbt/olist_project && dbt run",
-    )
+# ----------------------
+# Airflow Operators
+# ----------------------
+task_download = PythonOperator(
+    task_id="download_and_upload_to_minio",
+    python_callable=download_and_upload,
+    dag=dag,
+)
 
-    # 5. Run dbt tests
-    dbt_test = BashOperator(
-        task_id="dbt_test",
-        bash_command="cd /opt/airflow/dbt/olist_project && dbt test",
-    )
+task_load_postgres = PythonOperator(
+    task_id="load_raw_to_postgres",
+    python_callable=load_raw_postgres,
+    dag=dag,
+)
 
-    # dependencies
-    download_task >> upload_task >> load_task >> dbt_run >> dbt_test
+task_dbt_run = PythonOperator(
+    task_id="dbt_run",
+    python_callable=dbt_run,
+    dag=dag,
+)
+
+task_dbt_test = PythonOperator(
+    task_id="dbt_test",
+    python_callable=dbt_test,
+    dag=dag,
+)
+
+# ----------------------
+# Task dependencies
+# ----------------------
+task_download >> task_load_postgres >> task_dbt_run >> task_dbt_test
