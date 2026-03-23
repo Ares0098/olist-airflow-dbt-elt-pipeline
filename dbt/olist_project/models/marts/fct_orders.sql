@@ -4,7 +4,7 @@ WITH order_items_agg AS (
         order_id,
         SUM(price) AS total_item_value,
         SUM(freight_value) AS total_freight_value
-    FROM staging.stg_order_items
+    FROM {{ ref('stg_order_items') }}
     GROUP BY order_id
 
 ),
@@ -16,7 +16,7 @@ orders AS (
         customer_id,
         order_purchase_ts,
         order_status
-    FROM staging.stg_orders
+    FROM {{ ref('stg_orders') }}
 
 )
 

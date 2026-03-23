@@ -3,5 +3,5 @@ SELECT
     payment_sequential,
     payment_type,
     payment_installments,
-    payment_value
-FROM raw.raw_payments
+    CAST(payment_value AS NUMERIC) AS payment_value
+FROM {{ source('raw', 'raw_payments') }}

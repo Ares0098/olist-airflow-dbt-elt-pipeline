@@ -5,4 +5,4 @@ SELECT
     seller_id,
     price,
     freight_value
-FROM staging.stg_order_items
+FROM {{ ref('stg_order_items') }}

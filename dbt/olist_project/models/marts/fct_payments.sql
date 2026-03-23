@@ -4,4 +4,4 @@ SELECT
     payment_type,
     payment_installments,
     payment_value
-FROM staging.stg_payments
+FROM {{ ref('stg_payments') }}
