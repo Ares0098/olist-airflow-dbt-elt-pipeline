@@ -57,25 +57,41 @@ services:
         --email admin@example.com
       "
 
+  # ----------------------
+  # Airflow Webserver
+  # ----------------------
   airflow-webserver:
-    build: .
+    image: apache/airflow:2.8.1
     container_name: airflow_webserver
     depends_on:
-      - airflow-init
+      - postgres
+      - minio
     environment:
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/olist
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
       - ./dbt:/opt/airflow/dbt
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./.env:/opt/airflow/.env
     ports:
       - "8080:8080"
-    command: webserver
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow db init &&
+      airflow users create --username airflow --password airflow --firstname admin --lastname admin --role Admin --email admin@example.com &&
+      airflow webserver
+      "
 
+  # ----------------------
+  # Airflow Scheduler
+  # ----------------------
   airflow-scheduler:
-    build: .
+    image: apache/airflow:2.8.1
     container_name: airflow_scheduler
     depends_on:
       - airflow-webserver
@@ -86,8 +102,13 @@ services:
       - ./airflow/dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
       - ./dbt:/opt/airflow/dbt
-      - ./data:/opt/airflow/data
-    command: scheduler
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./.env:/opt/airflow/.env
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow scheduler
+      "
 
 volumes:
   postgres_data:
