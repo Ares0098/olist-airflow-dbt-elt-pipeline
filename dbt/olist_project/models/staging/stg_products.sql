@@ -8,4 +8,4 @@ SELECT
     product_length_cm,
     product_height_cm,
     product_width_cm
-FROM raw.raw_products
+FROM {{ source('raw', 'raw_products') }}

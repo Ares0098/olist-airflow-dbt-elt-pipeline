@@ -7,4 +7,4 @@ SELECT
     order_delivered_carrier_ts,
     order_delivered_customer_ts,
     order_estimated_delivery_ts
-FROM staging.stg_orders
+FROM {{ ref('stg_orders') }}

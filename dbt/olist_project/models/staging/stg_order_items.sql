@@ -4,6 +4,6 @@ SELECT
     product_id,
     seller_id,
     shipping_limit_date::timestamp AS shipping_limit_ts,
-    price,
-    freight_value
-FROM raw.raw_order_items
+    CAST(price AS NUMERIC) AS price,
+    CAST(freight_value AS NUMERIC) AS freight_value
+FROM {{ source('raw', 'raw_order_items') }}

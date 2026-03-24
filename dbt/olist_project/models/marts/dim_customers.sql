@@ -4,4 +4,4 @@ SELECT
     customer_zip_code_prefix,
     customer_city,
     customer_state
-FROM staging.stg_customers
+FROM {{ ref('stg_customers') }}

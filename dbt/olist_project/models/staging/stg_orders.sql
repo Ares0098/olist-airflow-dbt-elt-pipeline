@@ -7,4 +7,4 @@ SELECT
     order_delivered_carrier_date::timestamp AS order_delivered_carrier_ts,
     order_delivered_customer_date::timestamp AS order_delivered_customer_ts,
     order_estimated_delivery_date::timestamp AS order_estimated_delivery_ts
-FROM raw.raw_orders
+FROM {{ source('raw', 'raw_orders') }}
