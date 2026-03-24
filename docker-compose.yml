@@ -1,0 +1,119 @@
+version: "3.8"
+
+services:
+  # ----------------------
+  # Postgres (Warehouse)
+  # ----------------------
+  postgres:
+    image: postgres:14
+    container_name: olist_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: olist
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ----------------------
+  # MinIO (S3 simulation)
+  # ----------------------
+  minio:
+    image: minio/minio:latest
+    container_name: olist_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin123
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+
+  # ----------------------
+# Airflow (Orchestration)
+# ----------------------
+
+  airflow-init:
+    build: .
+    container_name: airflow_init
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/olist
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create \
+        --username airflow \
+        --password airflow \
+        --firstname admin \
+        --lastname admin \
+        --role Admin \
+        --email admin@example.com
+      "
+
+  # ----------------------
+  # Airflow Webserver
+  # ----------------------
+  airflow-webserver:
+    image: apache/airflow:2.8.1
+    container_name: airflow_webserver
+    depends_on:
+      - postgres
+      - minio
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/olist
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - ./dbt:/opt/airflow/dbt
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./.env:/opt/airflow/.env
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow db init &&
+      airflow users create --username airflow --password airflow --firstname admin --lastname admin --role Admin --email admin@example.com &&
+      airflow webserver
+      "
+    env_file:
+      - .env
+
+  # ----------------------
+  # Airflow Scheduler
+  # ----------------------
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    container_name: airflow_scheduler
+    depends_on:
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/olist
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - ./dbt:/opt/airflow/dbt
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      - ./.env:/opt/airflow/.env
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow scheduler
+      "
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:
+  minio_data:
